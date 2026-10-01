@@ -47,12 +47,7 @@
         <form id="email-form">
           <label for="email">Email address</label>
           <input id="email" name="email" type="email" autocomplete="email" required>
-          <button type="submit">Send sign-in code</button>
-        </form>
-        <form id="otp-form" hidden>
-          <label for="otp">One-time code</label>
-          <input id="otp" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" required>
-          <button type="submit">Verify code</button>
+          <button type="submit">Send sign-in link</button>
         </form>
       </section>
 
@@ -80,10 +75,17 @@
       const $ = (id) => document.getElementById(id);
       const message = $('message');
       const emailForm = $('email-form');
-      const otpForm = $('otp-form');
       const authorizationId = new URLSearchParams(location.search).get('authorization_id');
-      let email = '';
+      const authCallbackError = new URLSearchParams(location.hash.slice(1)).has('error');
       let authorizationReady = false;
+
+      function emailRedirectUrl() {
+        const callback = new URL('https://mchenla.github.io/eatnext-auth/');
+        if (authorizationId && /^[A-Za-z0-9_-]{1,200}$/.test(authorizationId)) {
+          callback.searchParams.set('authorization_id', authorizationId);
+        }
+        return callback.href;
+      }
 
       function showMessage(text, kind = '') {
         message.textContent = text;
@@ -108,7 +110,7 @@
         showMessage('EatNext sign-in is not configured. Please contact the person who manages this service.', 'error');
       } else {
         const supabase = createClient(PROJECT_URL, config.publishableKey, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
         });
 
         async function showSession() {
@@ -157,6 +159,8 @@
         }
 
         async function refreshState() {
+          $('consent').hidden = true;
+          authorizationReady = false;
           showMessage('Checking your EatNext account…');
           try {
             const signedIn = await showSession();
@@ -165,7 +169,7 @@
               $('sign-in').hidden = false;
               $('title').textContent = authorizationId ? 'Sign in to review access' : 'Sign in to EatNext';
               $('intro').textContent = authorizationId ? 'Sign in with your existing EatNext account. The access request will remain here.' : 'Use your existing EatNext account to continue.';
-              showMessage('');
+              showMessage(authCallbackError ? 'The sign-in link could not be completed. Request a new link and try again.' : '');
               return;
             }
             if (!authorizationId) showMessage('Signed in. No app is requesting access right now.');
@@ -179,35 +183,16 @@
           event.preventDefault();
           const button = emailForm.querySelector('button');
           setBusy([button], true);
-          email = $('email').value.trim();
-          showMessage('Sending a sign-in code…');
+          showMessage('Sending a sign-in link…');
           try {
-            const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
-            if (error) return showMessage('Could not send a code to that address. Check it and try again.', 'error');
-            emailForm.hidden = true;
-            otpForm.hidden = false;
-            $('otp').focus();
-            showMessage('Check your email for a one-time code.', 'success');
+            const { error } = await supabase.auth.signInWithOtp({
+              email: $('email').value.trim(),
+              options: { shouldCreateUser: false, emailRedirectTo: emailRedirectUrl() },
+            });
+            if (error) return showMessage('Could not send a sign-in link to that address. Check it and try again.', 'error');
+            showMessage('Check your email, then open the sign-in link in this browser. You can request another link here if needed.', 'success');
           } catch {
-            showMessage('Could not send a code to that address. Check it and try again.', 'error');
-          } finally {
-            setBusy([button], false);
-          }
-        });
-
-        otpForm.addEventListener('submit', async (event) => {
-          event.preventDefault();
-          const button = otpForm.querySelector('button');
-          setBusy([button], true);
-          showMessage('Verifying your code…');
-          try {
-            const { error } = await supabase.auth.verifyOtp({ email, token: $('otp').value.trim(), type: 'email' });
-            if (error) return showMessage('That code could not be verified. Check it and try again.', 'error');
-            otpForm.hidden = true;
-            showMessage('Signed in successfully.', 'success');
-            await refreshState();
-          } catch {
-            showMessage('That code could not be verified. Check it and try again.', 'error');
+            showMessage('Could not send a sign-in link to that address. Check it and try again.', 'error');
           } finally {
             setBusy([button], false);
           }
@@ -222,11 +207,8 @@
             authorizationReady = false;
             if (error) showMessage('Could not sign out. Please try again.', 'error');
             else {
-              email = '';
               emailForm.reset();
-              otpForm.reset();
               emailForm.hidden = false;
-              otpForm.hidden = true;
               await refreshState();
             }
           } catch {
