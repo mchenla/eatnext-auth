@@ -189,6 +189,13 @@
               email: $('email').value.trim(),
               options: { shouldCreateUser: false, emailRedirectTo: emailRedirectUrl() },
             });
+            if (error?.code === 'signup_disabled') {
+              const { error: confirmationError } = await supabase.auth.resend({
+                type: 'signup', email: $('email').value.trim(),
+                options: { emailRedirectTo: emailRedirectUrl() },
+              });
+              if (!confirmationError) return showMessage('Check your email for an account confirmation link, then open it in this browser to continue.', 'success');
+            }
             if (error) return showMessage('Could not send a sign-in link to that address. Check it and try again.', 'error');
             showMessage('Check your email, then open the sign-in link in this browser. You can request another link here if needed.', 'success');
           } catch {
