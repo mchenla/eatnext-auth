@@ -196,6 +196,7 @@
               });
               if (!confirmationError) return showMessage('Check your email for an account confirmation link, then open it in this browser to continue.', 'success');
             }
+            if (['over_email_send_rate_limit', 'over_request_rate_limit'].includes(error?.code)) return showMessage('Too many sign-in link requests. Please try again later.', 'error');
             if (error) return showMessage('Could not send a sign-in link to that address. Check it and try again.', 'error');
             showMessage('Check your email, then open the sign-in link in this browser. You can request another link here if needed.', 'success');
           } catch {
